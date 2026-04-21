@@ -1,60 +1,51 @@
-import Database from 'better-sqlite3';
+import fs from 'fs';
+import path from 'path';
 
-const db = new Database('plantbook.db');
+const DATA_DIR = '/app/data';
+const DATA_FILE = path.join(DATA_DIR, 'plants.json');
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS plants (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    name TEXT NOT NULL,
-    latin_name TEXT,
-    category TEXT DEFAULT 'Лиственные',
-    light TEXT,
-    water TEXT,
-    temp TEXT,
-    description TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-  CREATE TABLE IF NOT EXISTS notes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    plant_id INTEGER,
-    user_id INTEGER,
-    text TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
+const defaults = [
+  { id: 1, name: 'Монстера', latin_name: 'Monstera deliciosa', category: 'Комнатные', light: 'Рассеянный свет', water: 'Умеренно', temp: '20-25°C', description: 'Популярное комнатное растение с крупными листьями.', user_id: null, last_watered: null },
+  { id: 2, name: 'Замиокулькас', latin_name: 'Zamioculcas zamiifolia', category: 'Суккуленты', light: 'Тень', water: 'Редко', temp: '18-26°C', description: 'Неубиваемое растение, переносит засуху и тень.', user_id: null, last_watered: null },
+  { id: 3, name: 'Фикус', latin_name: 'Ficus lyrata', category: 'Комнатные', light: 'Яркий свет', water: 'Умеренно', temp: '18-24°C', description: 'Красивое растение с крупными скрипичными листьями.', user_id: null, last_watered: null }
+];
 
-// Демо-растения
-const count = db.prepare('SELECT COUNT(*) as c FROM plants').get();
-if (count.c === 0) {
-  const insert = db.prepare(`
-    INSERT INTO plants (user_id, name, latin_name, category, light, water, temp, description)
-    VALUES (0, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  insert.run('Монстера', 'Monstera deliciosa', 'Лиственные', 'Яркий рассеянный', 'Раз в неделю', '18-25°C', 'Популярное растение с разрезными листьями');
-  insert.run('Замиокулькас', 'Zamioculcas zamiifolia', 'Суккуленты', 'Любой', 'Раз в 3 недели', '15-30°C', 'Идеально для начинающих');
-  insert.run('Фикус', 'Ficus lyrata', 'Деревья', 'Яркий прямой', 'Раз в 10 дней', '20-30°C', 'Эффектное растение с крупными листьями');
+let db = { plants: [], notes: [], nextPlantId: 4, nextNoteId: 1 };
+
+function load() {
+  try {
+    if (fs.existsSync(DATA_FILE)) db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    else { db.plants = [...defaults]; save(); }
+  } catch (e) { db.plants = [...defaults]; }
 }
+function save() { try { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2)); } catch (e) {} }
 
-export const getPlants = (userId) =>
-  db.prepare('SELECT * FROM plants WHERE user_id = ? OR user_id = 0').all(userId);
+load();
 
-export const getPlant = (id) =>
-  db.prepare('SELECT * FROM plants WHERE id = ?').get(id);
-
-export const searchPlants = (query) =>
-  db.prepare('SELECT * FROM plants WHERE name LIKE ? OR latin_name LIKE ?')
-    .all(`%${query}%`, `%${query}%`);
-
-export const addPlant = (plant) =>
-  db.prepare(`INSERT INTO plants (user_id, name, latin_name, category, light, water, temp, description)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(plant.user_id, plant.name, plant.latin_name, plant.category, plant.light, plant.water, plant.temp, plant.description);
-
-export const getNotes = (plantId) =>
-  db.prepare('SELECT * FROM notes WHERE plant_id = ? ORDER BY created_at DESC').all(plantId);
-
-export const addNote = (plantId, userId, text) =>
-  db.prepare('INSERT INTO notes (plant_id, user_id, text) VALUES (?, ?, ?)')
-    .run(plantId, userId, text);
+export const getPlants = (userId) => db.plants.filter(p => p.user_id === null || p.user_id === userId);
+export const getPlant = (id) => db.plants.find(p => p.id === Number(id));
+export const searchPlants = (q) => {
+  const qq = q.toLowerCase();
+  return db.plants.filter(p => p.name.toLowerCase().includes(qq) || p.latin_name.toLowerCase().includes(qq));
+};
+export const addPlant = (p) => {
+  const plant = { ...p, id: db.nextPlantId++, created_at: new Date().toISOString() };
+  db.plants.push(plant); save(); return plant;
+};
+export const deletePlant = (id, userId) => {
+  const i = db.plants.findIndex(p => p.id === Number(id) && p.user_id === userId);
+  if (i === -1) return false;
+  db.notes = db.notes.filter(n => n.plant_id !== Number(id));
+  db.plants.splice(i, 1); save(); return true;
+};
+export const updateLastWatered = (id, date) => {
+  const p = db.plants.find(p => p.id === Number(id));
+  if (p) { p.last_watered = date; save(); }
+};
+export const addNote = (plantId, userId, text) => {
+  const n = { id: db.nextNoteId++, plant_id: Number(plantId), user_id: userId, text, created_at: new Date().toLocaleString('ru-RU') };
+  db.notes.push(n); save(); return n;
+};
+export const getNotes = (plantId) => db.notes.filter(n => n.plant_id === Number(plantId)).sort((a, b) => b.id - a.id);
