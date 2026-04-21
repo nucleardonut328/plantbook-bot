@@ -1,20 +1,8 @@
 export async function analyzePlant(plant) {
-  // Отладка: проверяем переменные окружения
-  console.log('=== GROQ DEBUG ===');
-  console.log('GROQ_API_KEY exists:', !!process.env.GROQ_API_KEY);
-  console.log('GROQ_API_KEY length:', process.env.GROQ_API_KEY ? process.env.GROQ_API_KEY.length : 0);
-  console.log('GROQ_API_KEY starts with gsk_:', process.env.GROQ_API_KEY ? process.env.GROQ_API_KEY.startsWith('gsk_') : false);
-  console.log('All env keys:', Object.keys(process.env).filter(k => k.includes('GROQ') || k.includes('API') || k.includes('KEY')));
-  console.log('==================');
-
   const key = process.env.GROQ_API_KEY;
 
   if (!key) {
-    return '❌ *Ошибка:* переменная `GROQ_API_KEY` не найдена. Добавьте её в Railway Variables (⚙️ → Variables → New Variable).';
-  }
-
-  if (!key.startsWith('gsk_')) {
-    return '❌ *Ошибка:* ключ должен начинаться с `gsk_`. Получите ключ на console.groq.com';
+    return '❌ *Ошибка:* добавьте `GROQ_API_KEY` в Railway Variables.';
   }
 
   const prompt = `Ты эксперт по комнатным растениям. Проанализируй растение "${plant.name}" (${plant.latin_name}).
@@ -31,29 +19,23 @@ export async function analyzePlant(plant) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'llama3-8b-8192',
+        model: 'llama-3.1-8b-instant',  // ← НОВАЯ МОДЕЛЬ
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
         max_tokens: 2000
       })
     });
 
-    console.log('GROQ response status:', res.status);
-
     if (!res.ok) {
-      const errText = await res.text();
-      console.log('GROQ error body:', errText);
-      throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      const err = await res.text();
+      throw new Error(`HTTP ${res.status}: ${err.substring(0, 100)}`);
     }
 
     const data = await res.json();
-    console.log('GROQ response choices:', data.choices ? 'exists' : 'missing');
-    
     return data.choices?.[0]?.message?.content || '⚠️ Пустой ответ от AI';
 
   } catch (err) {
-    console.error('GROQ ERROR:', err.message);
-    return `⚠️ *Ошибка AI:* ${err.message}\n\nПроверьте GROQ_API_KEY в Railway Variables.`;
+    console.error('Groq error:', err.message);
+    return `⚠️ *Ошибка AI:* ${err.message}`;
   }
 }
-
