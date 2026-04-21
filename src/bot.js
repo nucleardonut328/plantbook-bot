@@ -128,10 +128,19 @@ app.get('/', (_, res) => res.send('🌿 PlantBook Bot работает!'));
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3000;
+
+// Получаем домен: либо из WEBHOOK_URL, либо из Railway-переменной
+const DOMAIN = process.env.WEBHOOK_URL || 
+               (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null);
+
 app.listen(PORT, async () => {
   console.log(`🌿 Запущен на порту ${PORT}`);
-  if (process.env.WEBHOOK_URL) {
-    await bot.telegram.setWebhook(`${process.env.WEBHOOK_URL}/webhook`);
-    console.log(`🔗 Webhook: ${process.env.WEBHOOK_URL}/webhook`);
+  
+  if (DOMAIN) {
+    const webhookUrl = `${DOMAIN}/webhook`;
+    await bot.telegram.setWebhook(webhookUrl);
+    console.log(`🔗 Webhook: ${webhookUrl}`);
+  } else {
+    console.log('⚠️ Нет WEBHOOK_URL / RAILWAY_PUBLIC_DOMAIN, webhook не установлен');
   }
 });
